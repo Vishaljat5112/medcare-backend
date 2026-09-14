@@ -148,7 +148,7 @@ const recalculateBillTotals = async (billId) => {
     totalAdjustments += adj;
   }
 
-  const balanceDue = totalCharges - (totalPayments + totalAdjustments);
+  const balanceDue = Math.max(0, totalCharges - (totalPayments + totalAdjustments));
 
   const totals = {
     totalCharges: Number(totalCharges.toFixed(2)),
@@ -434,7 +434,7 @@ export const createBill = async (req, res) => {
       await prisma.case.update({
         where: { id: data.caseId },
         data: { diagnosisCodes: dxList }
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     // Check if the bill already exists to prevent duplicate insertion error
@@ -672,6 +672,11 @@ export const postAdjustment = async (req, res) => {
   const { id } = req.params;
   const { lineIndex, amount, reason } = req.body;
 
+  const adjAmount = parseFloat(amount);
+  if (isNaN(adjAmount) || adjAmount <= 0) {
+    return res.status(400).json({ error: 'Please enter a valid adjustment amount.' });
+  }
+
   try {
     const bill = await prisma.bill.findUnique({
       where: { id },
@@ -682,48 +687,57 @@ export const postAdjustment = async (req, res) => {
       return res.status(404).json({ error: 'Bill not found.' });
     }
 
+    // Check bill overall remaining balance
+    const parsedTotals = typeof bill.totals === 'string' ? JSON.parse(bill.totals) : (bill.totals || {});
+    const billBalanceDue = parsedTotals.balanceDue !== undefined ? Number(parsedTotals.balanceDue) : 0;
+
+    if (billBalanceDue <= 0) {
+      return res.status(400).json({ error: 'Bill is already fully settled ($0 balance). No further adjustments can be posted.' });
+    }
+
     const lines = bill.serviceLines || [];
     let targetLine = (lineIndex !== undefined && lines[lineIndex])
       ? lines[lineIndex]
       : lines.find(l => Number(l.lineBalance) > 0) || lines[0];
 
     if (!targetLine) {
-      const lineId = `srv-adj-${Date.now()}`;
-      targetLine = await prisma.serviceLine.create({
-        data: {
-          id: lineId,
-          billId: id,
-          dos: new Date().toLocaleDateString('en-US'),
-          dateOfService: new Date().toLocaleDateString('en-US'),
-          cptCode: '99204',
-          description: 'Adjustment Allocation',
-          charge: parseFloat(amount) || 0,
-          adjustments: parseFloat(amount) || 0,
-          balance: 0,
-          lineBalance: 0,
-          insurancePayment: 0,
-          patientPayment: 0,
-          otherPayment: 0
-        }
-      });
-    } else {
-      const insurancePayment = Number(targetLine.insurancePayment) || 0;
-      const patientPayment = Number(targetLine.patientPayment) || 0;
-      const otherPayment = Number(targetLine.otherPayment) || 0;
+      return res.status(400).json({ error: 'No active service lines available for adjustment.' });
+    }
 
-      const adjustments = (Number(targetLine.adjustments) || 0) + parseFloat(amount);
-      const totalLinePay = insurancePayment + patientPayment + otherPayment;
-      const lineBalance = Math.max(0, Number(targetLine.charge) - (totalLinePay + adjustments));
+    const insurancePayment = Number(targetLine.insurancePayment) || 0;
+    const patientPayment = Number(targetLine.patientPayment) || 0;
+    const otherPayment = Number(targetLine.otherPayment) || 0;
+    const currentLineAdj = Number(targetLine.adjustments) || 0;
+    const totalLinePay = insurancePayment + patientPayment + otherPayment;
+    const lineCharge = Number(targetLine.charge) || 0;
 
-      await prisma.serviceLine.update({
-        where: { id: targetLine.id },
-        data: {
-          adjustments,
-          balance: lineBalance,
-          lineBalance
-        }
+    // Remaining balance on the target line
+    const maxLineAdjAllowed = Math.max(0, lineCharge - (totalLinePay + currentLineAdj));
+
+    // Effective maximum allowed adjustment (cannot exceed remaining bill balance OR remaining line balance)
+    const maxAllowed = Math.min(billBalanceDue, maxLineAdjAllowed);
+
+    if (maxAllowed <= 0) {
+      return res.status(400).json({ error: 'Target service line has a $0 balance. No further adjustments can be applied.' });
+    }
+
+    if (adjAmount > maxAllowed) {
+      return res.status(400).json({
+        error: `Adjustment amount ($${adjAmount.toFixed(2)}) exceeds maximum allowable remaining balance ($${maxAllowed.toFixed(2)}).`
       });
     }
+
+    const adjustments = currentLineAdj + adjAmount;
+    const lineBalance = Math.max(0, lineCharge - (totalLinePay + adjustments));
+
+    await prisma.serviceLine.update({
+      where: { id: targetLine.id },
+      data: {
+        adjustments,
+        balance: lineBalance,
+        lineBalance
+      }
+    });
 
     // Create Transaction Record
     await prisma.transaction.create({
@@ -732,7 +746,7 @@ export const postAdjustment = async (req, res) => {
         billId: id,
         transactionType: 'ADJUSTMENT',
         source: 'WRITE_OFF',
-        amount: parseFloat(amount),
+        amount: adjAmount,
         notes: reason || 'Adjustment write off'
       }
     });
