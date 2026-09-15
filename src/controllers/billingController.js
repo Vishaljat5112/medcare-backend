@@ -936,17 +936,30 @@ export const getOverviewStats = async (req, res) => {
       }
     });
 
+    const allProviders = await prisma.provider.findMany();
+
     let totalBilled = 0;
     let totalPayments = 0;
     let totalAdjustments = 0;
     let balanceDue = 0;
 
-    const providerMap = {
-      'prov-josmic': { name: 'JOSMIC Wellness Center', specialty: 'Pain Management', total: 0, paid: 0, balance: 0, status: 'Finalised', color: 'teal' },
-      'prov-davs': { name: "DAV'S Anatomy", specialty: 'Shockwave (ESWT)', total: 0, paid: 0, balance: 0, status: 'Issued', color: 'blue' },
-      'prov-anik': { name: 'ANIK Laser Therapy', specialty: 'Laser Therapy', total: 0, paid: 0, balance: 0, status: 'Issued', color: 'violet' },
-      'prov-counselor': { name: 'Counselor Practice (Hope Behavioral)', specialty: 'Counseling & Mental Health', total: 0, paid: 0, balance: 0, status: 'Issued', color: 'amber' }
-    };
+    const providerMap = {};
+    const colors = ['teal', 'blue', 'violet', 'amber', 'emerald', 'rose', 'indigo', 'cyan'];
+    
+    allProviders.forEach((p, idx) => {
+      providerMap[p.id] = {
+        name: p.name || 'Unknown',
+        specialty: p.serviceCategory || 'Practice Provider',
+        total: 0,
+        paid: 0,
+        balance: 0,
+        status: 'Issued',
+        color: colors[idx % colors.length]
+      };
+    });
+
+    // Specific overrides for demo
+    if (providerMap['prov-josmic']) providerMap['prov-josmic'].status = 'Finalised';
 
     let current = 0;
     let past30 = 0;
@@ -960,7 +973,9 @@ export const getOverviewStats = async (req, res) => {
       const chg = totals.totalCharges || 0;
       const pmt = totals.totalPayments || 0;
       const adj = totals.totalAdjustments || 0;
-      const bal = totals.balanceDue || (chg - pmt - adj);
+      
+      // Fix: Outstanding Balance = Total Billed - Amount Collected
+      const bal = chg - pmt;
 
       totalBilled += chg;
       totalPayments += pmt;
@@ -972,10 +987,23 @@ export const getOverviewStats = async (req, res) => {
       past60 += (aging.past60 || 0);
       past90 += (aging.past90 || 0);
 
-      if (providerMap[b.providerId]) {
-        providerMap[b.providerId].total += chg;
-        providerMap[b.providerId].paid += pmt;
-        providerMap[b.providerId].balance += bal;
+      if (!providerMap[b.providerId]) {
+        providerMap[b.providerId] = {
+          name: b.provider?.name || 'Unknown',
+          specialty: b.provider?.serviceCategory || 'Practice Provider',
+          total: 0,
+          paid: 0,
+          balance: 0,
+          status: 'Issued',
+          color: 'slate'
+        };
+      }
+      
+      providerMap[b.providerId].total += chg;
+      providerMap[b.providerId].paid += pmt;
+      providerMap[b.providerId].balance += bal;
+      if (b.status === 'FINALISED_DEMO' || b.status === 'Finalised') {
+        providerMap[b.providerId].status = 'Finalised';
       }
     }
 
