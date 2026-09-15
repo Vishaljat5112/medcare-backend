@@ -23,6 +23,7 @@ const formatPatient = (p) => {
       state: p.state || '',
       zipCode: p.zipCode || ''
     },
+    location: p.location || '',
     communicationPref: p.communicationPref,
     consentStatus: p.consentStatus,
     assignedProviderIds: typeof p.assignedProviderIds === 'string' ? JSON.parse(p.assignedProviderIds) : p.assignedProviderIds,
@@ -145,6 +146,7 @@ export const createPatient = async (req, res) => {
         city,
         state,
         zipCode,
+        location: data.location || '',
         communicationPref: data.communicationPref || 'SMS',
         consentStatus: data.consentStatus || 'SIGNED',
         assignedProviderIds: data.assignedProviderIds || ['prov-josmic', 'prov-davs', 'prov-anik', 'prov-counselor'],
@@ -204,6 +206,7 @@ export const updatePatient = async (req, res) => {
         city,
         state,
         zipCode,
+        location: updates.location !== undefined ? updates.location : existing.location,
         communicationPref: updates.communicationPref || existing.communicationPref,
         consentStatus: updates.consentStatus || existing.consentStatus,
         assignedProviderIds: updates.assignedProviderIds || existing.assignedProviderIds,

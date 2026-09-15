@@ -66,6 +66,7 @@ model Patient {
   city                String?        @db.VarChar(100)
   state               String?        @db.VarChar(10)
   zipCode             String?        @map("zip_code") @db.VarChar(20)
+  location            String?        @db.VarChar(200)
   communicationPref   String?        @map("communication_pref") @db.VarChar(50)
   consentStatus       String?        @map("consent_status") @db.VarChar(50)
   assignedProviderIds Json?          @map("assigned_provider_ids")
