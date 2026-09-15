@@ -45,8 +45,18 @@ const formatBill = (b) => {
   });
 
   const pt = b.case?.patient;
+  const ptAddress = typeof pt?.address === 'string'
+    ? (() => { try { return JSON.parse(pt.address); } catch (e) { return {}; } })()
+    : (pt?.address || {});
+
+  const ptStreet = pt?.street || ptAddress.street || pt?.addressLine1 || '';
+  const ptCity = pt?.city || ptAddress.city || '';
+  const ptState = pt?.state || ptAddress.state || '';
+  const ptZip = pt?.zipCode || ptAddress.zipCode || '';
+  const ptPhone = pt?.phone || ptAddress.phone || pt?.mobile || '';
+
   const patientFullName = pt ? `${pt.firstName || ''} ${pt.lastName || ''}`.trim() : (b.patientName || '');
-  const ptAddr = pt ? `${pt.street || pt.addressLine1 || ''}, ${pt.city || ''} ${pt.state || ''}`.trim() : (b.patientAddress || '');
+  const ptAddr = pt ? `${ptStreet}, ${ptCity} ${ptState} ${ptZip}`.replace(/^, |, $/g, '').trim() : (b.patientAddress || '');
 
   let dxCodes = [];
   if (b.case?.diagnosisCodes) {
@@ -78,22 +88,23 @@ const formatBill = (b) => {
     patientName: patientFullName,
     patientAddress: ptAddr,
     // CMS-1500: Individual patient address components
-    patientStreet: pt?.street || '',
-    patientCity: pt?.city || '',
-    patientState: pt?.state || '',
-    patientZip: pt?.zipCode || '',
-    patientPhone: pt?.phone || '',
+    patientStreet: ptStreet || b.patientStreet || '',
+    patientCity: ptCity || b.patientCity || '',
+    patientState: ptState || b.patientState || '',
+    patientZip: ptZip || b.patientZip || '',
+    patientPhone: ptPhone || b.patientPhone || '',
     patientDob: pt?.dob || '',
     patientSex: pt?.sex || '',
     patientSystemId: pt?.patientId || '',
+    primaryGroupNumber: pt?.primaryGroupNumber || '',
     statementNumber: b.statementNumber || '',
     statementDate: b.statementDate || '',
     billToName: b.billToName || (b.case?.attorneyName ? `${b.case.attorneyName}` : ''),
     billToAddress: b.billToAddress || b.case?.lawFirmAddress || '',
     diagnosisCodes: dxCodes,
-    // CMS-1500: Referring provider from Case
-    referringProviderName: b.case?.referringProviderName || '',
-    referringProviderNpi: b.case?.referringProviderNpi || '',
+    // CMS-1500: Referring provider from Case or Patient (no billing provider fallbacks)
+    referringProviderName: b.referringProviderName || b.case?.referringProviderName || pt?.referringProvider || pt?.referringProviderName || '',
+    referringProviderNpi: b.referringProviderNpi || b.case?.referringProviderNpi || pt?.referringProviderNpi || '',
     // CMS-1500: Provider identifiers
     providerNpi: provIdentifiers.npi || '',
     providerTaxId: provIdentifiers.taxId || '',
@@ -109,9 +120,11 @@ const formatBill = (b) => {
     providerCity: provAddr.city || '',
     providerState: provAddr.state || '',
     providerZip: provAddr.zipCode || '',
-    // CMS-1500: Case details for accident/illness dates
+    // CMS-1500: Case details for accident/illness dates and insurance info
     accidentDate: b.case?.accidentDate || '',
     accidentState: b.case?.accidentState || '',
+    insuranceCompany: b.case?.insuranceCompany || '',
+    insurancePolicyNumber: b.case?.insurancePolicyNumber || '',
     attorneyName: b.case?.attorneyName || '',
     attorneyAddress: b.case?.attorneyAddress || b.case?.lawFirmAddress || '',
     status: b.status,
