@@ -61,6 +61,7 @@ model Patient {
   phone               String?        @db.VarChar(20)
   email               String?        @db.VarChar(150)
   ssn                 String?        @db.VarChar(50)
+  primaryGroupNumber  String?        @map("primary_group_number") @db.VarChar(100)
   street              String?        @db.VarChar(200)
   suite               String?        @db.VarChar(50)
   city                String?        @db.VarChar(100)
