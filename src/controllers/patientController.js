@@ -5,6 +5,25 @@ import { prisma } from '../config/db.js';
  */
 const formatPatient = (p) => {
   if (!p) return null;
+  let totalPracticeAR = 0;
+  let uniqueProviders = new Set();
+
+  if (p.cases && Array.isArray(p.cases)) {
+    p.cases.forEach(c => {
+      if (c.bills && Array.isArray(c.bills)) {
+        c.bills.forEach(bill => {
+          uniqueProviders.add(bill.providerId);
+          if (bill.totals) {
+            const t = typeof bill.totals === 'string' ? JSON.parse(bill.totals) : bill.totals;
+            if (t.totalCharges) {
+              totalPracticeAR += parseFloat(t.totalCharges) || 0;
+            }
+          }
+        });
+      }
+    });
+  }
+
   return {
     id: p.id,
     patientId: p.patientId,
@@ -31,7 +50,9 @@ const formatPatient = (p) => {
     referringProviderNpi: p.referringProviderNpi || p.cases?.[0]?.referringProviderNpi || '',
     assignedProviderIds: typeof p.assignedProviderIds === 'string' ? JSON.parse(p.assignedProviderIds) : p.assignedProviderIds,
     status: p.status,
-    createdAt: p.createdAt
+    createdAt: p.createdAt,
+    totalPracticeAR,
+    connectedProviderBillsCount: uniqueProviders.size
   };
 };
 
@@ -65,6 +86,13 @@ export const getPatients = async (req, res) => {
 
     let patients = await prisma.patient.findMany({
       where,
+      include: {
+        cases: {
+          include: {
+            bills: true
+          }
+        }
+      },
       orderBy: { createdAtDate: 'desc' }
     });
 
@@ -96,6 +124,13 @@ export const getPatientById = async (req, res) => {
           { id },
           { patientId: id }
         ]
+      },
+      include: {
+        cases: {
+          include: {
+            bills: true
+          }
+        }
       }
     });
 
